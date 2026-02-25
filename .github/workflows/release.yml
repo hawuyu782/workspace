@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Create release archive
+        run: |
+          # 创建要打包的文件列表
+          echo "Creating release package..."
+          mkdir -p release
+          
+          # 打包 workspace 中的关键文件（排除敏感和大型文件）
+          tar -czf release/workspace.tar.gz \
+            --exclude='.git' \
+            --exclude='__pycache__' \
+            --exclude='node_modules' \
+            --exclude='.openclaw' \
+            --exclude='*.pyc' \
+            --exclude='memory' \
+            .
+            
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/workspace.tar.gz
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
