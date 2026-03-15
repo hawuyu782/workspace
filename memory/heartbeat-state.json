@@ -1,0 +1,24 @@
+{
+  "last_report": "2026-03-14T09:00:00+08:00",
+  "last_checks": {
+    "email": "2026-03-13T09:00:00+08:00",
+    "calendar": null,
+    "weather": "2026-03-11T08:13:00+08:00",
+    "feizhua_channel": "2026-03-13T07:47:00+08:00",
+    "daily_news": "2026-03-14T09:00:00+08:00"
+  },
+  "last_check": "2026-03-14T09:00:00",
+  "services": {
+    "mattermost": "ok",
+    "openclaw": "ok",
+    "ollama": "ok",
+    "clash_proxy": "ok"
+  },
+  "subagents": {
+    "程序员": "bailian/qwen3-coder-plus",
+    "写作助手": "bailian/qwen3-max-2026-01-23",
+    "设计师": "bailian/kimi-k2.5"
+  },
+  "conversation_rounds": 1,
+  "daily_news_sent": true
+}
