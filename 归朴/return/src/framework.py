@@ -27,12 +27,12 @@ from memory.tool_logger import ToolLogger
 
 
 # ===== 常量定义 =====
-# MiniMax-M2.7 支持 8192 tokens，预留 2000 tokens 给 system prompt 和回复
-MAX_CONTEXT_TOKENS = 6000
+# MiniMax-M2.7 支持 8192 tokens，预留 3000 tokens 给 system prompt 和回复
+MAX_CONTEXT_TOKENS = 5000
 # 平均每条对话约 100 tokens（保守估计）
 AVG_TOKENS_PER_MESSAGE = 100
-# 最大历史对话条数
-MAX_HISTORY_MESSAGES = MAX_CONTEXT_TOKENS // AVG_TOKENS_PER_MESSAGE
+# 最大历史对话条数（更保守，避免 500 错误）
+MAX_HISTORY_MESSAGES = MAX_CONTEXT_TOKENS // AVG_TOKENS_PER_MESSAGE  # 50 条
 
 
 class GuipuFramework:
