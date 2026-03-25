@@ -47,8 +47,8 @@ class FeishuStreamingSession:
         self.closed = False
         
         # 流式配置
-        self.frequency_ms = 50  # 更新频率（毫秒）
-        self.step_size = 5  # 每次更新的字符数
+        self.frequency_ms = 1000  # 更新频率（毫秒）- 1 秒
+        self.step_size = 10  # 每次更新的字符数 - 10 个字符
         
         logger.info(f"飞书流式会话初始化完成：{self.app_id}")
     
@@ -115,33 +115,31 @@ class FeishuStreamingSession:
         if err:
             return False, err
         
-        # 构建流式卡片内容
+        # 构建流式卡片内容（JSON 2.0 格式）
         card_content = {
             "config": {
                 "wide_screen_mode": True,
-                "enable_forward": True
-            },
-            "streaming_mode": True,  # ⭐ 关键：启用流式模式
-            "streaming_config": {
-                "frequency": self.frequency_ms,  # 更新频率（毫秒）
-                "step_size": self.step_size  # 每次更新的内容步长
-            },
-            "elements": [{
-                "tag": "div",
-                "text": {
-                    "content": initial_content,
-                    "tag": "lark_md"
+                "enable_forward": True,
+                "streaming_mode": True,  # ⭐ 关键：启用流式模式
+                "streaming_config": {
+                    "print_frequency_ms": {"default": self.frequency_ms},  # 更新频率（毫秒）
+                    "print_step": {"default": self.step_size}  # 每次更新的内容步长
                 }
-            }]
+            },
+            "body": {
+                "elements": [{
+                    "tag": "markdown",  # ⭐ 使用 markdown 标签，支持流式更新
+                    "content": initial_content,
+                    "element_id": "markdown_1"  # ⭐ 必须设置 element_id，用于后续更新
+                }]
+            }
         }
         
-        # 发送卡片消息
-        url = "https://open.feishu.cn/open-apis/im/v1/messages"
-        params = {"receive_id_type": receive_id_type}
-        payload = {
-            "receive_id": receive_id,
-            "msg_type": "interactive",
-            "content": json.dumps({"card": card_content}, ensure_ascii=False)
+        # 步骤 1：先调用 CardKit API 创建卡片实体
+        create_card_url = "https://open.feishu.cn/open-apis/cardkit/v1/cards"
+        create_card_payload = {
+            "type": "card_json",
+            "data": json.dumps(card_content, ensure_ascii=False)
         }
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -149,19 +147,52 @@ class FeishuStreamingSession:
         }
         
         try:
-            logger.debug(f"POST: {url}")
-            response = requests.post(url, params=params, json=payload, headers=headers)
+            logger.debug(f"POST: {create_card_url}")
+            logger.debug(f"Request body: {json.dumps(create_card_payload, ensure_ascii=False)[:300]}...")
+            response = requests.post(create_card_url, json=create_card_payload, headers=headers)
+            logger.debug(f"Response status: {response.status_code}")
+            logger.debug(f"Response body: {response.text[:500]}")
             response.raise_for_status()
             result = response.json()
             
             if result.get("code", 0) != 0:
-                error = Exception(f"failed to send streaming card: {result.get('msg', 'unknown error')}")
-                logger.error(f"❌ 发送流式卡片失败：{error}")
+                error = Exception(f"failed to create card: {result.get('msg', 'unknown error')}")
+                logger.error(f"❌ 创建卡片实体失败：{error}")
                 return False, error
             
-            self.message_id = result["data"]["message_id"]
+            card_id = result["data"]["card_id"]
+            logger.info(f"✅ 创建卡片实体成功：{card_id}")
+            
+            # 步骤 2：发送消息（带卡片实体 ID）
+            send_message_url = "https://open.feishu.cn/open-apis/im/v1/messages"
+            params = {"receive_id_type": receive_id_type}
+            send_message_payload = {
+                "receive_id": receive_id,
+                "msg_type": "interactive",
+                "content": json.dumps({
+                    "type": "card",
+                    "data": {
+                        "card_id": card_id
+                    }
+                }, ensure_ascii=False)
+            }
+            
+            logger.debug(f"POST: {send_message_url}")
+            response = requests.post(send_message_url, params=params, json=send_message_payload, headers=headers)
+            logger.debug(f"Response status: {response.status_code}")
+            logger.debug(f"Response body: {response.text[:500]}")
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get("code", 0) != 0:
+                error = Exception(f"failed to send message: {result.get('msg', 'unknown error')}")
+                logger.error(f"❌ 发送消息失败：{error}")
+                return False, error
+            
+            self.card_id = card_id  # 保存卡片实体 ID
+            self.message_id = result["data"]["message_id"]  # ⭐ 保存消息 ID，用于后续更新
             self.current_text = initial_content
-            logger.info(f"✅ 发送流式卡片成功：{self.message_id}")
+            logger.info(f"✅ 发送流式卡片成功：卡片 ID={self.card_id}, 消息 ID={self.message_id}")
             return True, None
             
         except Exception as e:
@@ -191,20 +222,34 @@ class FeishuStreamingSession:
         if err:
             return False, err
         
-        # 构建更新内容
-        url = f"https://open.feishu.cn/open-apis/im/v1/messages/{self.message_id}/patch"
-        update_content = {
-            "content": json.dumps({
-                "card": {
-                    "elements": [{
-                        "tag": "div",
-                        "text": {
-                            "content": merged_text,
-                            "tag": "lark_md"
-                        }
-                    }]
+        # 构建完整的卡片内容
+        card_content = {
+            "config": {
+                "wide_screen_mode": True,
+                "enable_forward": True
+            },
+            "streaming_mode": True,
+            "streaming_config": {
+                "frequency": self.frequency_ms,
+                "step_size": self.step_size
+            },
+            "elements": [{
+                "tag": "div",
+                "text": {
+                    "content": merged_text,
+                    "tag": "lark_md"
                 }
-            }, ensure_ascii=False)
+            }]
+        }
+        
+        # 使用飞书官方 CardKit API 流式更新文本
+        # 文档：https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/content
+        url = f"https://open.feishu.cn/open-apis/cardkit/v1/cards/{self.card_id}/elements/content"
+        
+        # 飞书 CardKit API 要求：传入全量文本内容，平台自动计算增量
+        update_content = {
+            "element_id": "markdown_1",  # 文本组件的唯一标识
+            "content": merged_text  # 全量文本内容
         }
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -212,8 +257,11 @@ class FeishuStreamingSession:
         }
         
         try:
-            logger.debug(f"PATCH: {url}")
-            response = requests.patch(url, json=update_content, headers=headers)
+            logger.debug(f"POST: {url}")
+            logger.debug(f"Request body: {json.dumps(update_content, ensure_ascii=False)[:300]}...")
+            response = requests.post(url, json=update_content, headers=headers)  # ⭐ 使用 POST 方法
+            logger.debug(f"Response status: {response.status_code}")
+            logger.debug(f"Response body: {response.text[:500]}")
             response.raise_for_status()
             result = response.json()
             
@@ -232,7 +280,7 @@ class FeishuStreamingSession:
     
     def close(self, final_text: str = "") -> Tuple[bool, Optional[Exception]]:
         """
-        关闭流式会话
+        关闭流式会话（调用 CardKit API 关闭流式模式）
         
         Args:
             final_text: 最终文本内容
@@ -249,6 +297,33 @@ class FeishuStreamingSession:
             if not success:
                 return False, err
         
-        self.closed = True
-        logger.info(f"✅ 流式会话已关闭：{self.message_id}")
-        return True, None
+        # 调用 CardKit API 关闭流式模式
+        url = f"https://open.feishu.cn/open-apis/cardkit/v1/cards/{self.message_id}/settings"
+        settings_content = {
+            "config": {
+                "streaming_mode": False  # 关闭流式模式
+            }
+        }
+        
+        # 获取 access_token
+        access_token, err = self._get_access_token()
+        if err:
+            return False, err
+        
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json; charset=utf-8"
+        }
+        
+        try:
+            logger.debug(f"POST: {url}")
+            response = requests.post(url, json=settings_content, headers=headers)
+            logger.debug(f"Response status: {response.status_code}")
+            response.raise_for_status()
+            
+            self.closed = True
+            logger.info(f"✅ 流式会话已关闭：{self.message_id}")
+            return True, None
+        except Exception as e:
+            logger.error(f"❌ 关闭流式会话异常：{e}")
+            return False, e
