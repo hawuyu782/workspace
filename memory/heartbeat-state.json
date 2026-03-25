@@ -1,13 +1,13 @@
 {
-  "last_report": "2026-03-14T09:00:00+08:00",
+  "last_report": "2026-03-24T09:00:00+08:00",
   "last_checks": {
-    "email": "2026-03-13T09:00:00+08:00",
+    "email": "2026-03-16T09:00:00+08:00",
     "calendar": null,
     "weather": "2026-03-11T08:13:00+08:00",
-    "feizhua_channel": "2026-03-13T07:47:00+08:00",
-    "daily_news": "2026-03-14T09:00:00+08:00"
+    "feizhua_channel": "2026-03-24T02:41:00+08:00",
+    "daily_news": "2026-03-24T09:00:00+08:00"
   },
-  "last_check": "2026-03-14T09:00:00",
+  "last_check": "2026-03-24T09:00:00",
   "services": {
     "mattermost": "ok",
     "openclaw": "ok",
